@@ -16,12 +16,12 @@ class ArketaClient {
 
   async getClients() {
     const res = await this.http.get('/clients');
-    return res.data;
+    return res.data || [];
   }
 
   async getPurchases() {
     const res = await this.http.get('/purchases');
-    return res.data;
+    return res.data || [];
   }
 
   async getActivePadelMembers(membershipNames) {
