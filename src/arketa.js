@@ -14,15 +14,15 @@ class ArketaClient {
     });
   }
 
-  async getClients() {
-    const res = await this.http.get('/clients');
-    return res.data || [];
-  }
+async getClients() {
+  const res = await this.http.get('/clients');
+  return Array.isArray(res.data) ? res.data : [];
+}
 
-  async getPurchases() {
-    const res = await this.http.get('/purchases');
-    return res.data || [];
-  }
+async getPurchases() {
+  const res = await this.http.get('/purchases');
+  return Array.isArray(res.data) ? res.data : [];
+}
 
   async getActivePadelMembers(membershipNames) {
     const [clients, purchases] = await Promise.all([
