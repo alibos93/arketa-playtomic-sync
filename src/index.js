@@ -6,15 +6,15 @@ const { uploadCSVToPlaytomic } = require('./playtomic');
 
 async function run() {
   const {
-    ARKETA_API_KEY,
+    ARKETA_REFRESH_TOKEN,
     ARKETA_PARTNER_ID,
     PLAYTOMIC_EMAIL,
     PLAYTOMIC_PASSWORD,
     MEMBERSHIP_NAMES,
   } = process.env;
 
-  if (!ARKETA_API_KEY || !ARKETA_PARTNER_ID) {
-    throw new Error('Missing ARKETA_API_KEY or ARKETA_PARTNER_ID');
+  if (!ARKETA_REFRESH_TOKEN || !ARKETA_PARTNER_ID) {
+    throw new Error('Missing ARKETA_REFRESH_TOKEN or ARKETA_PARTNER_ID');
   }
   if (!PLAYTOMIC_EMAIL || !PLAYTOMIC_PASSWORD) {
     throw new Error('Missing PLAYTOMIC_EMAIL or PLAYTOMIC_PASSWORD');
@@ -25,9 +25,9 @@ async function run() {
     : [];
 
   console.log(`Starting sync — ${new Date().toISOString()}`);
-  console.log(`Filtering memberships: ${membershipNames.join(', ')}`);
+  console.log(`Filtering memberships: ${membershipNames.length > 0 ? membershipNames.join(', ') : '(all)'}`);
 
-  const arketa = new ArketaClient(ARKETA_API_KEY, ARKETA_PARTNER_ID);
+  const arketa = new ArketaClient(ARKETA_REFRESH_TOKEN, ARKETA_PARTNER_ID);
   const members = await arketa.getActivePadelMembers(membershipNames);
   console.log(`Found ${members.length} active members in Arketa`);
 
@@ -38,6 +38,7 @@ async function run() {
 
   const csv = buildPlaytomicCSV(members);
   console.log('CSV generated successfully');
+  console.log('Preview:\n' + csv);
 
   await uploadCSVToPlaytomic(csv, PLAYTOMIC_EMAIL, PLAYTOMIC_PASSWORD);
 

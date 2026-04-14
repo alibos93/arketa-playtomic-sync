@@ -26,7 +26,7 @@ jobs:
 
       - name: Run sync
         env:
-          ARKETA_API_KEY: ${{ secrets.ARKETA_API_KEY }}
+          ARKETA_REFRESH_TOKEN: ${{ secrets.ARKETA_REFRESH_TOKEN }}
           ARKETA_PARTNER_ID: ${{ secrets.ARKETA_PARTNER_ID }}
           PLAYTOMIC_EMAIL: ${{ secrets.PLAYTOMIC_EMAIL }}
           PLAYTOMIC_PASSWORD: ${{ secrets.PLAYTOMIC_PASSWORD }}
