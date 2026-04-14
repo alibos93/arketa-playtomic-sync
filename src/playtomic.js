@@ -3,6 +3,13 @@ const fs = require('fs');
 const path = require('path');
 
 const PLAYTOMIC_MANAGER_URL = 'https://manager.playtomic.io';
+const SCREENSHOT_DIR = '/tmp';
+
+async function screenshot(page, name) {
+  const p = path.join(SCREENSHOT_DIR, `playtomic-${name}.png`);
+  await page.screenshot({ path: p, fullPage: true });
+  console.log(`[Screenshot] ${name} → ${p}`);
+}
 
 async function uploadCSVToPlaytomic(csvContent, email, password) {
   const tmpPath = path.join('/tmp', `playtomic-import-${Date.now()}.csv`);
@@ -16,8 +23,11 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
   const page = await browser.newPage();
 
   try {
+    // 1. Login
     console.log('Logging into Playtomic...');
     await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`);
+    await page.waitForLoadState('networkidle');
+    await screenshot(page, '01-login-page');
 
     await page.fill('input[type="email"], input[name="email"]', email);
     await page.fill('input[type="password"], input[name="password"]', password);
@@ -25,50 +35,81 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
     await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 });
     console.log('Logged in successfully.');
+    await screenshot(page, '02-after-login');
 
+    // 2. Navigate to contacts/import
+    console.log('Navigating to import page...');
     await page.goto(`${PLAYTOMIC_MANAGER_URL}/contacts/import`);
     await page.waitForLoadState('networkidle');
+    await screenshot(page, '03-import-page');
 
-    const importLink = page.locator('a[href*="import"], button:has-text("Import")').first();
-    if (await importLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await importLink.click();
+    // Log the page URL and content for debugging
+    console.log(`Current URL: ${page.url()}`);
+    const pageContent = await page.content();
+
+    // Find all buttons and links on the page
+    const buttons = await page.locator('button').allTextContents();
+    console.log('Buttons found:', JSON.stringify(buttons));
+
+    const links = await page.locator('a').allTextContents();
+    console.log('Links found:', JSON.stringify(links));
+
+    // Check for file inputs (visible or hidden)
+    const fileInputCount = await page.locator('input[type="file"]').count();
+    console.log(`File inputs found: ${fileInputCount}`);
+
+    // Check for any input elements
+    const allInputs = await page.locator('input').evaluateAll(els =>
+      els.map(el => ({ type: el.type, name: el.name, id: el.id, className: el.className, visible: el.offsetParent !== null }))
+    );
+    console.log('All inputs:', JSON.stringify(allInputs));
+
+    // Look for common import UI patterns
+    const importButtons = await page.locator('button:has-text("Import"), button:has-text("Upload"), button:has-text("Add"), button:has-text("File"), button:has-text("CSV"), a:has-text("Import"), a:has-text("Upload")').allTextContents();
+    console.log('Import-related buttons:', JSON.stringify(importButtons));
+
+    // Try clicking any import/upload button if found
+    const importBtn = page.locator('button:has-text("Import"), button:has-text("Upload"), button:has-text("Add"), a:has-text("Import")').first();
+    if (await importBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      console.log('Clicking import button...');
+      await importBtn.click();
       await page.waitForLoadState('networkidle');
+      await screenshot(page, '04-after-import-click');
+
+      // Re-check for file input
+      const fileInputCount2 = await page.locator('input[type="file"]').count();
+      console.log(`File inputs after click: ${fileInputCount2}`);
+
+      const allInputs2 = await page.locator('input').evaluateAll(els =>
+        els.map(el => ({ type: el.type, name: el.name, id: el.id, visible: el.offsetParent !== null }))
+      );
+      console.log('Inputs after click:', JSON.stringify(allInputs2));
     }
 
-    console.log('Navigated to import page.');
+    // Try alternate paths
+    const altPaths = [
+      '/contacts',
+      '/contacts/import/file',
+      '/members/import',
+      '/members',
+    ];
 
-    const fileOption = page.locator('label:has-text("File"), input[value*="file"], button:has-text("File")').first();
-    if (await fileOption.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await fileOption.click();
-    }
-
-    const nextBtn = page.locator('button:has-text("Next"), button:has-text("Continue")').first();
-    if (await nextBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await nextBtn.click();
+    for (const altPath of altPaths) {
+      await page.goto(`${PLAYTOMIC_MANAGER_URL}${altPath}`);
       await page.waitForLoadState('networkidle');
+      const url = page.url();
+      const fileCount = await page.locator('input[type="file"]').count();
+      const btns = await page.locator('button').allTextContents();
+      console.log(`[Probe] ${altPath} → URL: ${url}, file inputs: ${fileCount}, buttons: ${JSON.stringify(btns.slice(0, 10))}`);
+      await screenshot(page, `probe-${altPath.replace(/\//g, '-')}`);
     }
 
-    console.log('Uploading CSV file...');
-    const fileInput = page.locator('input[type="file"]');
-    await fileInput.waitFor({ timeout: 10000 });
-    await fileInput.setInputFiles(tmpPath);
-
-    const uploadBtn = page.locator(
-      'button:has-text("Upload"), button:has-text("Import"), button:has-text("Next"), button:has-text("Continue")'
-    ).first();
-    await uploadBtn.waitFor({ timeout: 5000 });
-    await uploadBtn.click();
-
-    await page.waitForLoadState('networkidle');
-    console.log('CSV uploaded successfully.');
-
-    const screenshotPath = '/tmp/playtomic-import-result.png';
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log(`Screenshot saved to ${screenshotPath}`);
+    await screenshot(page, '99-final');
+    console.log('Debug run complete — check screenshots for UI state.');
 
   } finally {
     await browser.close();
-    fs.unlinkSync(tmpPath);
+    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
   }
 }
 
