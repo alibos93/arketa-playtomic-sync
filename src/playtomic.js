@@ -23,7 +23,7 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.fill('input[type="password"], input[name="password"]', password);
     await page.click('button[type="submit"]');
 
-    await page.waitForURL(url => !url.includes('/login'), { timeout: 15000 });
+    await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 });
     console.log('Logged in successfully.');
 
     await page.goto(`${PLAYTOMIC_MANAGER_URL}/contacts/import`);
