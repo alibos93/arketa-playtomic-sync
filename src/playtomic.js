@@ -4,6 +4,22 @@ const path = require('path');
 
 const PLAYTOMIC_MANAGER_URL = 'https://manager.playtomic.io';
 
+// Map Arketa membership names to Playtomic benefit dropdown values
+const BENEFIT_MAP = {
+  'royal': 'Royal Membership',
+  'iconic': 'Iconic Membership',
+  'core': 'Core Membership',
+  'rise': 'Rise Membership',
+};
+
+function getBenefitName(membershipName) {
+  const lower = (membershipName || '').toLowerCase();
+  for (const [key, value] of Object.entries(BENEFIT_MAP)) {
+    if (lower.includes(key)) return value;
+  }
+  return null;
+}
+
 async function dismissModals(page) {
   for (const sel of ['button:has-text("Skip for now")', 'button:has-text("Skip")', '[aria-label="Close"]']) {
     const btn = page.locator(sel).first();
@@ -14,11 +30,9 @@ async function dismissModals(page) {
   }
 }
 
-async function uploadCSVToPlaytomic(csvContent, email, password) {
+async function uploadCSVToPlaytomic(csvContent, email, password, members) {
   const tmpPath = path.join('/tmp', `playtomic-import-${Date.now()}.csv`);
   fs.writeFileSync(tmpPath, csvContent);
-
-  const screenshotPath = '/tmp/playtomic-import-result.png';
 
   const browser = await chromium.launch({
     headless: true,
@@ -30,19 +44,17 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
   try {
     // === LOGIN ===
     console.log('Logging into Playtomic...');
-    await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`);
-    await page.waitForLoadState('networkidle');
+    await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`, { waitUntil: 'networkidle' });
     await page.fill('input[type="email"], input[name="email"]', email);
     await page.fill('input[type="password"], input[name="password"]', password);
     await page.click('button[type="submit"]');
     await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 });
     console.log('Logged in.');
-    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
     await dismissModals(page);
 
-    // === NAVIGATE TO IMPORTS ===
-    console.log('Navigating to Customers > Imports...');
+    // === IMPORT CUSTOMERS VIA CSV ===
+    console.log('\n--- Importing customers via CSV ---');
     await page.click('a[href="/dashboard/customers"]');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
@@ -50,140 +62,156 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    // === STEP 1: Select import type → Customers ===
-    console.log('Starting import wizard...');
+    // Step 1: Select Customers
     await page.click('button:has-text("New Import")');
     await page.waitForTimeout(3000);
     await dismissModals(page);
-
     await page.waitForSelector('text=Select an object', { timeout: 10000 });
     await page.locator('text=The people you work with').click();
     await page.waitForTimeout(1000);
-
-    // Click Next (wait for it to be enabled)
-    const nextBtn1 = page.locator('button:has-text("Next")');
-    await nextBtn1.waitFor({ state: 'visible', timeout: 5000 });
-    await page.waitForTimeout(500);
-    await nextBtn1.click();
+    await page.locator('button:has-text("Next")').click();
     await page.waitForTimeout(3000);
-    console.log('Step 1 done: Selected Customers.');
 
-    // === STEP 2: Data handling consent ===
+    // Step 2: Consent
     await page.locator('#hasDataHandlingPermission').check();
     await page.waitForTimeout(500);
-    const nextBtn2 = page.locator('button:has-text("Next")');
-    await nextBtn2.click();
+    await page.locator('button:has-text("Next")').click();
     await page.waitForTimeout(3000);
-    console.log('Step 2 done: Consent accepted.');
 
-    // === STEP 3: Upload CSV file ===
-    const fileInput = page.locator('input[type="file"]');
-    await fileInput.setInputFiles(tmpPath);
+    // Step 3: Upload CSV
+    await page.locator('input[type="file"]').setInputFiles(tmpPath);
     await page.waitForTimeout(3000);
-    console.log('Step 3: CSV file uploaded.');
-
-    // Click Next to submit the import
-    const nextBtn3 = page.locator('button:has-text("Next")');
-    await nextBtn3.click();
+    await page.locator('button:has-text("Next")').click();
     await page.waitForTimeout(5000);
 
-    // === STEP 4: Dismiss "processing" confirmation modal ===
-    const okBtn = page.locator('button:has-text("Ok, got it"), button:has-text("Ok"), button:has-text("Got it")').first();
+    // Step 4: Dismiss processing modal
+    const okBtn = page.locator('button:has-text("Ok, got it")').first();
     if (await okBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
-      console.log('Import is processing!');
       await okBtn.click();
       await page.waitForTimeout(2000);
     }
+    console.log('CSV import completed.');
 
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log('CSV import completed successfully.');
+    // Wait for import to process before assigning benefits
+    console.log('Waiting for import to process...');
+    await page.waitForTimeout(5000);
 
-    // === STEP 5: Assign benefits — explore customer profile approach ===
-    console.log('\n=== Exploring benefit assignment via customer profile ===');
+    // === ASSIGN BENEFITS TO EACH MEMBER ===
+    console.log('\n--- Assigning membership benefits ---');
 
-    // Go to Customers page and search for the first member
-    await page.click('a[href="/dashboard/customers"]');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(3000);
-    await dismissModals(page);
+    for (const member of members) {
+      const benefitName = getBenefitName(member.membership_name);
+      if (!benefitName) {
+        console.log(`[Skip] ${member.first_name} ${member.last_name} — no matching benefit for "${member.membership_name}"`);
+        continue;
+      }
 
-    // Search for Todd Schwartz
-    console.log('Searching for Todd Schwartz...');
-    const custSearch = page.locator('input[placeholder*="Search"], input[type="search"]').first();
-    if (await custSearch.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await custSearch.fill('Todd');
-      await page.waitForTimeout(3000);
-      await page.screenshot({ path: '/tmp/playtomic-customer-search.png', fullPage: true });
-      console.log('[Screenshot] customer-search');
+      const fullName = `${member.first_name} ${member.last_name}`.trim();
+      console.log(`\nAssigning "${benefitName}" to ${fullName}...`);
 
-      // Log search results
-      const results = await page.locator('table tr, [class*="row"], [class*="result"]').allTextContents();
-      console.log('Search results:', JSON.stringify(results.map(r => r.trim().slice(0, 80)).filter(Boolean).slice(0, 5)));
+      // Go to Customers and search
+      await page.click('a[href="/dashboard/customers"]');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+      await dismissModals(page);
 
-      // Click on the first result (Todd Schwartz)
-      const toddRow = page.locator('text=Todd Schwartz').first();
-      if (await toddRow.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log('Clicking Todd Schwartz...');
-        await toddRow.click();
-        await page.waitForLoadState('networkidle');
+      // Make sure we're on the Customers tab (not Imports)
+      const custTab = page.locator('a:has-text("Customers")').first();
+      if (await custTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await custTab.click();
+        await page.waitForTimeout(2000);
+      }
+
+      // Search for the member
+      const searchInput = page.locator('input[placeholder*="Search"], input[type="search"]').first();
+      if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await searchInput.fill(member.last_name || fullName);
         await page.waitForTimeout(3000);
-        await dismissModals(page);
 
-        console.log(`Customer URL: ${page.url()}`);
+        // Click on the customer row
+        const customerRow = page.locator(`text=${fullName}`).first();
+        if (await customerRow.isVisible({ timeout: 5000 }).catch(() => false)) {
+          await customerRow.click();
+          await page.waitForLoadState('networkidle');
+          await page.waitForTimeout(2000);
+          await dismissModals(page);
 
-        // Log all tabs/sections on the customer profile
-        const profileTabs = await page.locator('a, [role="tab"], button').allTextContents();
-        const relevantTabs = profileTabs.map(t => t.trim()).filter(t => t && t.length < 30);
-        console.log('Profile tabs:', JSON.stringify([...new Set(relevantTabs)].slice(0, 20)));
+          // Click Benefits tab
+          const benefitsTab = page.locator('a:has-text("Benefits"), [role="tab"]:has-text("Benefits")').first();
+          await benefitsTab.click();
+          await page.waitForTimeout(2000);
 
-        // Look for Benefits/Membership section
-        const benefitLink = page.locator('a:has-text("Benefit"), a:has-text("Membership"), a:has-text("Reward"), button:has-text("Benefit"), button:has-text("Membership"), [role="tab"]:has-text("Benefit")').first();
-        if (await benefitLink.isVisible({ timeout: 3000 }).catch(() => false)) {
-          const linkText = await benefitLink.textContent();
-          console.log(`Found benefit section: "${linkText.trim()}"`);
-          await benefitLink.click();
-          await page.waitForTimeout(3000);
+          // Check if they already have a benefit
+          const existingBenefit = page.locator('text=Royal Membership, text=Core Membership, text=Iconic Membership, text=Rise Membership').first();
+          if (await existingBenefit.isVisible({ timeout: 2000 }).catch(() => false)) {
+            console.log(`  ${fullName} already has a benefit assigned. Skipping.`);
+            continue;
+          }
 
-          const benefitBtns = await page.locator('button:visible').allTextContents();
-          console.log('Benefit section buttons:', JSON.stringify(benefitBtns.map(b => b.trim()).filter(Boolean)));
+          // Click "Add benefit"
+          const addBenefitBtn = page.locator('button:has-text("Add benefit")').first();
+          if (await addBenefitBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await addBenefitBtn.click();
+            await page.waitForTimeout(2000);
 
-          await page.screenshot({ path: '/tmp/playtomic-customer-benefits.png', fullPage: true });
-          console.log('[Screenshot] customer-benefits');
+            // Select the benefit from dropdown
+            const benefitDropdown = page.locator('select, [role="combobox"], [class*="select"]').first();
+            if (await benefitDropdown.isVisible({ timeout: 5000 }).catch(() => false)) {
+              // Try select element first
+              const isSelect = await benefitDropdown.evaluate(el => el.tagName === 'SELECT');
+              if (isSelect) {
+                await benefitDropdown.selectOption({ label: benefitName });
+              } else {
+                // Click to open dropdown, then select option
+                await benefitDropdown.click();
+                await page.waitForTimeout(1000);
+                await page.locator(`text="${benefitName}"`).click();
+              }
+              await page.waitForTimeout(2000);
 
-          // Look for "Add benefit" or "Assign benefit" button
-          const addBenBtn = page.locator('button:has-text("Add"), button:has-text("Assign"), button:has-text("Grant")').first();
-          if (await addBenBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            const btnText = await addBenBtn.textContent();
-            console.log(`Found add benefit button: "${btnText.trim()}"`);
-            await addBenBtn.click();
-            await page.waitForTimeout(3000);
+              // Screenshot to see the state
+              await page.screenshot({ path: `/tmp/playtomic-benefit-${member.last_name}.png`, fullPage: true });
 
-            // Log the dialog
-            const dialogContent = await page.locator('[role="dialog"], [class*="modal"], [class*="dialog"]').first().textContent().catch(() => '');
-            console.log('Dialog content:', dialogContent?.slice(0, 500));
+              // Scroll down and click Save/Confirm
+              const saveBtn = page.locator('button:has-text("Save"), button:has-text("Confirm"), button:has-text("Assign"), button:has-text("Add"), button:has-text("Submit")').last();
+              if (await saveBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                const saveTxt = await saveBtn.textContent();
+                console.log(`  Clicking "${saveTxt.trim()}"...`);
+                await saveBtn.click();
+                await page.waitForTimeout(3000);
+                console.log(`  Benefit "${benefitName}" assigned to ${fullName}.`);
+              } else {
+                // Maybe need to scroll down
+                await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                await page.waitForTimeout(1000);
 
-            const dialogBtns = await page.locator('button:visible').allTextContents();
-            console.log('Dialog buttons:', JSON.stringify(dialogBtns.map(b => b.trim()).filter(Boolean)));
-
-            const dialogInputs = await page.locator('input:visible, select:visible').evaluateAll(els =>
-              els.map(el => ({ tag: el.tagName, type: el.type, placeholder: el.placeholder, name: el.name, options: el.tagName === 'SELECT' ? Array.from(el.options).map(o => o.text).slice(0, 10) : undefined }))
-            );
-            console.log('Dialog inputs:', JSON.stringify(dialogInputs));
-
-            await page.screenshot({ path: '/tmp/playtomic-add-benefit-dialog.png', fullPage: true });
-            console.log('[Screenshot] add-benefit-dialog');
+                const saveBtn2 = page.locator('button:has-text("Save"), button:has-text("Confirm"), button:has-text("Assign"), button:has-text("Add")').last();
+                if (await saveBtn2.isVisible({ timeout: 3000 }).catch(() => false)) {
+                  await saveBtn2.click();
+                  await page.waitForTimeout(3000);
+                  console.log(`  Benefit "${benefitName}" assigned to ${fullName}.`);
+                } else {
+                  console.log(`  Could not find Save button. Check screenshot.`);
+                }
+              }
+            } else {
+              console.log(`  Could not find benefit dropdown.`);
+              // Log what's on the page
+              const allBtns = await page.locator('button:visible').allTextContents();
+              console.log('  Buttons:', JSON.stringify(allBtns.map(b => b.trim()).filter(Boolean)));
+              await page.screenshot({ path: `/tmp/playtomic-no-dropdown-${member.last_name}.png`, fullPage: true });
+            }
+          } else {
+            console.log(`  No "Add benefit" button found for ${fullName}.`);
           }
         } else {
-          console.log('No Benefits tab found on customer profile.');
-          await page.screenshot({ path: '/tmp/playtomic-customer-profile.png', fullPage: true });
-          console.log('[Screenshot] customer-profile');
+          console.log(`  Customer "${fullName}" not found in search.`);
         }
-      } else {
-        console.log('Todd not found in search results.');
       }
-    } else {
-      console.log('No search input found on customers page.');
     }
+
+    await page.screenshot({ path: '/tmp/playtomic-import-result.png', fullPage: true });
+    console.log('\nSync complete!');
 
   } finally {
     await browser.close();
