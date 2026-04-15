@@ -8,7 +8,7 @@ const SCREENSHOT_DIR = '/tmp';
 async function screenshot(page, name) {
   const p = path.join(SCREENSHOT_DIR, `playtomic-${name}.png`);
   await page.screenshot({ path: p, fullPage: true });
-  console.log(`[Screenshot] ${name} → ${p}`);
+  console.log(`[Screenshot] ${name}`);
 }
 
 async function uploadCSVToPlaytomic(csvContent, email, password) {
@@ -27,7 +27,6 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     console.log('Logging into Playtomic...');
     await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`);
     await page.waitForLoadState('networkidle');
-    await screenshot(page, '01-login-page');
 
     await page.fill('input[type="email"], input[name="email"]', email);
     await page.fill('input[type="password"], input[name="password"]', password);
@@ -35,77 +34,97 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
     await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 });
     console.log('Logged in successfully.');
-    await screenshot(page, '02-after-login');
 
-    // 2. Navigate to contacts/import
-    console.log('Navigating to import page...');
-    await page.goto(`${PLAYTOMIC_MANAGER_URL}/contacts/import`);
+    // 2. Wait for sidebar to fully render
+    console.log('Waiting for dashboard to load...');
     await page.waitForLoadState('networkidle');
-    await screenshot(page, '03-import-page');
+    await page.waitForTimeout(3000);
+    await screenshot(page, '01-dashboard-loaded');
 
-    // Log the page URL and content for debugging
-    console.log(`Current URL: ${page.url()}`);
-    const pageContent = await page.content();
-
-    // Find all buttons and links on the page
-    const buttons = await page.locator('button').allTextContents();
-    console.log('Buttons found:', JSON.stringify(buttons));
-
-    const links = await page.locator('a').allTextContents();
-    console.log('Links found:', JSON.stringify(links));
-
-    // Check for file inputs (visible or hidden)
-    const fileInputCount = await page.locator('input[type="file"]').count();
-    console.log(`File inputs found: ${fileInputCount}`);
-
-    // Check for any input elements
-    const allInputs = await page.locator('input').evaluateAll(els =>
-      els.map(el => ({ type: el.type, name: el.name, id: el.id, className: el.className, visible: el.offsetParent !== null }))
+    // Log sidebar items to find the right navigation
+    const sidebarLinks = await page.locator('nav a, aside a, [class*="sidebar"] a, [class*="menu"] a, [class*="nav"] a').evaluateAll(els =>
+      els.map(el => ({ text: el.textContent?.trim(), href: el.getAttribute('href'), ariaLabel: el.getAttribute('aria-label') }))
     );
-    console.log('All inputs:', JSON.stringify(allInputs));
+    console.log('Sidebar links:', JSON.stringify(sidebarLinks));
 
-    // Look for common import UI patterns
-    const importButtons = await page.locator('button:has-text("Import"), button:has-text("Upload"), button:has-text("Add"), button:has-text("File"), button:has-text("CSV"), a:has-text("Import"), a:has-text("Upload")').allTextContents();
-    console.log('Import-related buttons:', JSON.stringify(importButtons));
+    // Also get all links on page
+    const allLinks = await page.locator('a[href]').evaluateAll(els =>
+      els.map(el => ({ text: el.textContent?.trim().slice(0, 50), href: el.getAttribute('href') })).filter(l => l.href && !l.href.startsWith('http'))
+    );
+    console.log('Internal links:', JSON.stringify(allLinks));
 
-    // Try clicking any import/upload button if found
-    const importBtn = page.locator('button:has-text("Import"), button:has-text("Upload"), button:has-text("Add"), a:has-text("Import")').first();
-    if (await importBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      console.log('Clicking import button...');
-      await importBtn.click();
+    // Look for "Members", "Contacts", "Customers", "Players" in the sidebar
+    const memberLink = page.locator('a:has-text("Member"), a:has-text("Contact"), a:has-text("Customer"), a:has-text("Player"), a:has-text("Client")').first();
+    if (await memberLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const linkText = await memberLink.textContent();
+      console.log(`Found member-related link: "${linkText}"`);
+      await memberLink.click();
       await page.waitForLoadState('networkidle');
-      await screenshot(page, '04-after-import-click');
+      await page.waitForTimeout(2000);
+      await screenshot(page, '02-members-page');
 
-      // Re-check for file input
-      const fileInputCount2 = await page.locator('input[type="file"]').count();
-      console.log(`File inputs after click: ${fileInputCount2}`);
+      console.log(`URL after clicking: ${page.url()}`);
 
-      const allInputs2 = await page.locator('input').evaluateAll(els =>
-        els.map(el => ({ type: el.type, name: el.name, id: el.id, visible: el.offsetParent !== null }))
-      );
-      console.log('Inputs after click:', JSON.stringify(allInputs2));
-    }
+      // Look for import button on this page
+      const importBtn = page.locator('button:has-text("Import"), button:has-text("Upload"), a:has-text("Import"), a:has-text("Upload"), button:has-text("Add")');
+      const importCount = await importBtn.count();
+      console.log(`Import buttons found: ${importCount}`);
 
-    // Try alternate paths
-    const altPaths = [
-      '/contacts',
-      '/contacts/import/file',
-      '/members/import',
-      '/members',
-    ];
+      if (importCount > 0) {
+        const btnTexts = await importBtn.allTextContents();
+        console.log('Import button texts:', JSON.stringify(btnTexts));
+        await importBtn.first().click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(2000);
+        await screenshot(page, '03-import-dialog');
 
-    for (const altPath of altPaths) {
-      await page.goto(`${PLAYTOMIC_MANAGER_URL}${altPath}`);
-      await page.waitForLoadState('networkidle');
-      const url = page.url();
-      const fileCount = await page.locator('input[type="file"]').count();
-      const btns = await page.locator('button').allTextContents();
-      console.log(`[Probe] ${altPath} → URL: ${url}, file inputs: ${fileCount}, buttons: ${JSON.stringify(btns.slice(0, 10))}`);
-      await screenshot(page, `probe-${altPath.replace(/\//g, '-')}`);
+        console.log(`URL after import click: ${page.url()}`);
+
+        // Look for file input
+        const fileInput = page.locator('input[type="file"]');
+        const fileInputCount = await fileInput.count();
+        console.log(`File inputs: ${fileInputCount}`);
+
+        if (fileInputCount > 0) {
+          console.log('Uploading CSV...');
+          await fileInput.setInputFiles(tmpPath);
+          await page.waitForTimeout(2000);
+          await screenshot(page, '04-file-selected');
+
+          // Click upload/submit/next
+          const submitBtn = page.locator('button:has-text("Upload"), button:has-text("Import"), button:has-text("Next"), button:has-text("Continue"), button:has-text("Submit")').first();
+          if (await submitBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await submitBtn.click();
+            await page.waitForLoadState('networkidle');
+            await page.waitForTimeout(3000);
+            await screenshot(page, '05-upload-result');
+            console.log('CSV uploaded successfully.');
+          }
+        } else {
+          // Maybe there's a drag-drop zone or different upload pattern
+          const dropZone = page.locator('[class*="drop"], [class*="upload"], [class*="drag"]');
+          const dropCount = await dropZone.count();
+          console.log(`Drop zones found: ${dropCount}`);
+
+          // Log all visible elements for debugging
+          const visibleButtons = await page.locator('button:visible').allTextContents();
+          console.log('Visible buttons:', JSON.stringify(visibleButtons));
+        }
+      }
+    } else {
+      console.log('No member/contact link found in sidebar.');
+
+      // Try to get all visible text from sidebar
+      const sidebarText = await page.locator('nav, aside, [class*="sidebar"]').first().textContent().catch(() => 'none');
+      console.log('Sidebar text:', sidebarText?.slice(0, 500));
+
+      // Get full page text
+      const bodyText = await page.locator('body').textContent();
+      console.log('Page text:', bodyText?.slice(0, 1000));
     }
 
     await screenshot(page, '99-final');
-    console.log('Debug run complete — check screenshots for UI state.');
+    console.log('Debug run complete.');
 
   } finally {
     await browser.close();
