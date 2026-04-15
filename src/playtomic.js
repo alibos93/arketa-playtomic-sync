@@ -68,37 +68,16 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     // === STEP 3: Upload CSV (includes category_name for benefit assignment) ===
     await page.locator('input[type="file"]').setInputFiles(tmpPath);
     await page.waitForTimeout(3000);
-    await page.screenshot({ path: '/tmp/playtomic-step3-after-upload.png', fullPage: true });
-    console.log('[Screenshot] step3-after-upload');
-    // Log what the page shows after upload (column mapping, preview, errors, etc.)
-    const step3Text = await page.locator('main, [role="dialog"], [class*="modal"], [class*="content"]').first().textContent().catch(() => '');
-    console.log('Step 3 page text:', step3Text?.slice(0, 800));
-
     await page.locator('button:has-text("Next")').click();
     await page.waitForTimeout(5000);
-    await page.screenshot({ path: '/tmp/playtomic-step3-after-next.png', fullPage: true });
-    console.log('[Screenshot] step3-after-next');
-    const step3bText = await page.locator('main, [role="dialog"], [class*="modal"], [class*="content"]').first().textContent().catch(() => '');
-    console.log('After Step 3 Next:', step3bText?.slice(0, 800));
-    console.log('Step 3: CSV uploaded.');
+    console.log('Step 3: CSV uploaded and submitted.');
 
-    // === STEP 4: Check for any additional steps (column mapping?) before confirmation ===
-    // Look for a mapping step or any unexpected content
-    const nextBtn4 = page.locator('button:has-text("Next")').first();
-    if (await nextBtn4.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await page.screenshot({ path: '/tmp/playtomic-step4-extra.png', fullPage: true });
-      console.log('[Screenshot] step4-extra — unexpected Next button found');
-      const step4Text = await page.locator('main, [role="dialog"], [class*="modal"], [class*="content"]').first().textContent().catch(() => '');
-      console.log('Step 4 extra text:', step4Text?.slice(0, 800));
-      await nextBtn4.click();
-      await page.waitForTimeout(5000);
-    }
-
-    // === Dismiss confirmation ===
+    // === Dismiss "Ok, got it" confirmation modal ===
     const okBtn = page.locator('button:has-text("Ok, got it")').first();
     if (await okBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
       await okBtn.click();
       await page.waitForTimeout(2000);
+      console.log('Dismissed confirmation modal.');
     }
 
     // Check import status on the Imports page
@@ -117,46 +96,9 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
     console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 150)).filter(Boolean).slice(0, 5)));
 
-    // Try to download the error report from the most recent import
-    // Use multiple selector strategies
-    const errorLinkSelectors = [
-      'text=Download error rows',
-      'a:has-text("Download error")',
-      'button:has-text("Download error")',
-      'a:has-text("error rows")',
-      '[href*="error"]',
-    ];
-    let downloadClicked = false;
-    for (const sel of errorLinkSelectors) {
-      const link = page.locator(sel).first();
-      if (await link.isVisible({ timeout: 1000 }).catch(() => false)) {
-        console.log(`Found error link with selector: ${sel}`);
-        const [download] = await Promise.all([
-          page.waitForEvent('download', { timeout: 10000 }).catch(() => null),
-          link.click(),
-        ]);
-        if (download) {
-          const errorPath = '/tmp/playtomic-import-errors.csv';
-          await download.saveAs(errorPath);
-          const errorContent = fs.readFileSync(errorPath, 'utf-8');
-          console.log('=== IMPORT ERROR REPORT ===');
-          console.log(errorContent);
-          console.log('=== END ERROR REPORT ===');
-        } else {
-          console.log('Download event not triggered — checking for new page content...');
-          await page.waitForTimeout(2000);
-          const newText = await page.locator('main, [role="dialog"]').first().textContent().catch(() => '');
-          console.log('After click text:', newText?.slice(0, 500));
-        }
-        downloadClicked = true;
-        break;
-      }
-    }
-    if (!downloadClicked) {
-      console.log('No error download link found. Dumping all links on page:');
-      const allLinks = await page.locator('a, button').allTextContents();
-      console.log('Links/buttons:', JSON.stringify(allLinks.filter(t => t.trim()).slice(0, 20)));
-    }
+    // Log import history
+    const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
+    console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 150)).filter(Boolean).slice(0, 3)));
 
     await page.screenshot({ path: '/tmp/playtomic-import-result.png', fullPage: true });
     console.log('Done.');
