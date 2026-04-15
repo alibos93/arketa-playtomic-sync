@@ -78,7 +78,6 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
     // === STEP 3: Upload CSV file ===
     const fileInput = page.locator('input[type="file"]');
-    await fileInput.waitFor({ timeout: 10000 });
     await fileInput.setInputFiles(tmpPath);
     await page.waitForTimeout(3000);
     console.log('Step 3: CSV file uploaded.');
