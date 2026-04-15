@@ -159,18 +159,47 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
         console.log('[Screenshot] add-member-dialog');
       }
 
-      // Also check if there are sub-tabs like "Members" within the benefit
+      // Check Members tab
       const memberTab = page.locator('a:has-text("Members"), [role="tab"]:has-text("Members"), button:has-text("Members")').first();
       if (await memberTab.isVisible({ timeout: 3000 }).catch(() => false)) {
         console.log('Clicking Members tab...');
         await memberTab.click();
         await page.waitForTimeout(3000);
 
-        const memberBtns = await page.locator('button:visible').allTextContents();
-        console.log('Members tab buttons:', JSON.stringify(memberBtns.map(b => b.trim()).filter(Boolean)));
+        // Get ALL elements on the page for debugging
+        const allBtns = await page.locator('button').allTextContents();
+        console.log('All buttons (inc hidden):', JSON.stringify(allBtns.map(b => b.trim()).filter(Boolean)));
+
+        const allInputs = await page.locator('input').evaluateAll(els =>
+          els.map(el => ({ type: el.type, placeholder: el.placeholder, name: el.name, id: el.id, value: el.value }))
+        );
+        console.log('All inputs:', JSON.stringify(allInputs));
+
+        // Get the full HTML of the members section
+        const membersHtml = await page.locator('main, [class*="content"]').first().innerHTML().catch(() => '');
+        // Look for any add/assign/search patterns
+        const htmlSnippet = membersHtml.slice(0, 1000);
+        console.log('Members HTML (first 1000):', htmlSnippet);
 
         await page.screenshot({ path: '/tmp/playtomic-royal-members.png', fullPage: true });
-        console.log('[Screenshot] royal-members');
+
+        // Try typing a name in the search field
+        const searchInput = page.locator('input[placeholder*="Search"], input[placeholder*="search"], input[type="search"], input[type="text"]').first();
+        if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+          console.log('Found search input, typing Todd...');
+          await searchInput.fill('Todd');
+          await page.waitForTimeout(3000);
+
+          // Check if suggestions appeared
+          const suggestions = await page.locator('[class*="dropdown"], [class*="suggestion"], [class*="result"], [class*="option"], [role="listbox"], [role="option"]').allTextContents();
+          console.log('Search suggestions:', JSON.stringify(suggestions.map(s => s.trim()).filter(Boolean)));
+
+          const afterSearchBtns = await page.locator('button:visible').allTextContents();
+          console.log('Buttons after search:', JSON.stringify(afterSearchBtns.map(b => b.trim()).filter(Boolean)));
+
+          await page.screenshot({ path: '/tmp/playtomic-search-todd.png', fullPage: true });
+          console.log('[Screenshot] search-todd');
+        }
       }
     } else {
       console.log('Royal benefit not found on page.');
