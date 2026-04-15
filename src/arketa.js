@@ -68,16 +68,26 @@ class ArketaClient {
           s.product_name?.toLowerCase().includes(name.toLowerCase())
         );
       })
-      .map(s => ({
+      .map(s => {
+        // Map Arketa product names to Playtomic benefit names
+        const arketaName = (s.product_name || '').toLowerCase();
+        let playtomicBenefit = '';
+        if (arketaName.includes('royal')) playtomicBenefit = 'Royal Membership';
+        else if (arketaName.includes('iconic')) playtomicBenefit = 'Iconic Membership';
+        else if (arketaName.includes('core')) playtomicBenefit = 'Core Membership';
+        else if (arketaName.includes('rise')) playtomicBenefit = 'Rise Membership';
+
+        return {
         first_name: s.client_name?.split(' ')[0] || '',
         last_name: s.client_name?.split(' ').slice(1).join(' ') || '',
         email: s.client_email || '',
         phone: s.phone_number || '',
         gender: null,
         date_of_birth: null,
-        membership_name: (s.product_name || '').trim(),
+        membership_name: playtomicBenefit || (s.product_name || '').trim(),
         membership_expires: s.renewal_date?.value || s.next_renewal_date?.value || null,
-      }));
+      };
+      });
   }
 }
 

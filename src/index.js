@@ -40,7 +40,7 @@ async function run() {
   console.log('CSV generated successfully');
   console.log('Preview:\n' + csv);
 
-  await uploadCSVToPlaytomic(csv, PLAYTOMIC_EMAIL, PLAYTOMIC_PASSWORD, members);
+  await uploadCSVToPlaytomic(csv, PLAYTOMIC_EMAIL, PLAYTOMIC_PASSWORD);
 
   console.log(`Sync complete — ${members.length} members imported to Playtomic`);
 }
