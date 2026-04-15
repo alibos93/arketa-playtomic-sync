@@ -98,113 +98,91 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.screenshot({ path: screenshotPath, fullPage: true });
     console.log('CSV import completed successfully.');
 
-    // === STEP 5: Assign benefits to imported members ===
-    // Navigate to Rewards & Offers > Benefits
-    console.log('\n=== Assigning membership benefits ===');
-    await page.click('a[href="/dashboard/rewards"]');
+    // === STEP 5: Assign benefits — explore customer profile approach ===
+    console.log('\n=== Exploring benefit assignment via customer profile ===');
+
+    // Go to Customers page and search for the first member
+    await page.click('a[href="/dashboard/customers"]');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
     await dismissModals(page);
 
-    // Log the benefits listed on the page
-    const benefitNames = await page.locator('text=/Royal|Core|Rise|Iconic/i').allTextContents();
-    console.log('Benefits found:', JSON.stringify(benefitNames.map(b => b.trim())));
-
-    // Take a screenshot of the benefits page
-    await page.screenshot({ path: '/tmp/playtomic-benefits-page.png', fullPage: true });
-    console.log('[Screenshot] benefits-page');
-
-    // Click on "Royal" benefit to see member assignment UI
-    const royalLink = page.locator('text=Royal').first();
-    if (await royalLink.isVisible({ timeout: 5000 }).catch(() => false)) {
-      console.log('Clicking Royal benefit...');
-      await royalLink.click();
-      await page.waitForLoadState('networkidle');
+    // Search for Todd Schwartz
+    console.log('Searching for Todd Schwartz...');
+    const custSearch = page.locator('input[placeholder*="Search"], input[type="search"]').first();
+    if (await custSearch.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await custSearch.fill('Todd');
       await page.waitForTimeout(3000);
-      await dismissModals(page);
+      await page.screenshot({ path: '/tmp/playtomic-customer-search.png', fullPage: true });
+      console.log('[Screenshot] customer-search');
 
-      console.log(`URL: ${page.url()}`);
+      // Log search results
+      const results = await page.locator('table tr, [class*="row"], [class*="result"]').allTextContents();
+      console.log('Search results:', JSON.stringify(results.map(r => r.trim().slice(0, 80)).filter(Boolean).slice(0, 5)));
 
-      // Log all buttons and tabs
-      const btns = await page.locator('button:visible').allTextContents();
-      console.log('Buttons:', JSON.stringify(btns.map(b => b.trim()).filter(Boolean)));
-
-      const tabs = await page.locator('a:visible, [role="tab"]').allTextContents();
-      console.log('Tabs/Links:', JSON.stringify(tabs.map(t => t.trim()).filter(Boolean).slice(0, 20)));
-
-      // Look for "Add member", "Assign", etc.
-      const addBtns = await page.locator('button:has-text("Add"), button:has-text("Assign"), button:has-text("Member"), a:has-text("Add"), a:has-text("Assign")').allTextContents();
-      console.log('Add/Assign buttons:', JSON.stringify(addBtns.map(b => b.trim())));
-
-      await page.screenshot({ path: '/tmp/playtomic-royal-benefit.png', fullPage: true });
-      console.log('[Screenshot] royal-benefit');
-
-      // If there's an "Add member" or similar button, click it
-      const addMemberBtn = page.locator('button:has-text("Add member"), button:has-text("Assign member"), button:has-text("Add customer")').first();
-      if (await addMemberBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        console.log('Clicking Add member...');
-        await addMemberBtn.click();
+      // Click on the first result (Todd Schwartz)
+      const toddRow = page.locator('text=Todd Schwartz').first();
+      if (await toddRow.isVisible({ timeout: 5000 }).catch(() => false)) {
+        console.log('Clicking Todd Schwartz...');
+        await toddRow.click();
+        await page.waitForLoadState('networkidle');
         await page.waitForTimeout(3000);
+        await dismissModals(page);
 
-        // Log what the add member dialog looks like
-        const dialogBtns = await page.locator('button:visible').allTextContents();
-        console.log('Dialog buttons:', JSON.stringify(dialogBtns.map(b => b.trim()).filter(Boolean)));
+        console.log(`Customer URL: ${page.url()}`);
 
-        const dialogInputs = await page.locator('input:visible').evaluateAll(els =>
-          els.map(el => ({ type: el.type, placeholder: el.placeholder, name: el.name }))
-        );
-        console.log('Dialog inputs:', JSON.stringify(dialogInputs));
+        // Log all tabs/sections on the customer profile
+        const profileTabs = await page.locator('a, [role="tab"], button').allTextContents();
+        const relevantTabs = profileTabs.map(t => t.trim()).filter(t => t && t.length < 30);
+        console.log('Profile tabs:', JSON.stringify([...new Set(relevantTabs)].slice(0, 20)));
 
-        await page.screenshot({ path: '/tmp/playtomic-add-member-dialog.png', fullPage: true });
-        console.log('[Screenshot] add-member-dialog');
-      }
-
-      // Check Members tab
-      const memberTab = page.locator('a:has-text("Members"), [role="tab"]:has-text("Members"), button:has-text("Members")').first();
-      if (await memberTab.isVisible({ timeout: 3000 }).catch(() => false)) {
-        console.log('Clicking Members tab...');
-        await memberTab.click();
-        await page.waitForTimeout(3000);
-
-        // Get ALL elements on the page for debugging
-        const allBtns = await page.locator('button').allTextContents();
-        console.log('All buttons (inc hidden):', JSON.stringify(allBtns.map(b => b.trim()).filter(Boolean)));
-
-        const allInputs = await page.locator('input').evaluateAll(els =>
-          els.map(el => ({ type: el.type, placeholder: el.placeholder, name: el.name, id: el.id, value: el.value }))
-        );
-        console.log('All inputs:', JSON.stringify(allInputs));
-
-        // Get the full HTML of the members section
-        const membersHtml = await page.locator('main, [class*="content"]').first().innerHTML().catch(() => '');
-        // Look for any add/assign/search patterns
-        const htmlSnippet = membersHtml.slice(0, 1000);
-        console.log('Members HTML (first 1000):', htmlSnippet);
-
-        await page.screenshot({ path: '/tmp/playtomic-royal-members.png', fullPage: true });
-
-        // Try typing a name in the search field
-        const searchInput = page.locator('input[placeholder*="Search"], input[placeholder*="search"], input[type="search"], input[type="text"]').first();
-        if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-          console.log('Found search input, typing Todd...');
-          await searchInput.fill('Todd');
+        // Look for Benefits/Membership section
+        const benefitLink = page.locator('a:has-text("Benefit"), a:has-text("Membership"), a:has-text("Reward"), button:has-text("Benefit"), button:has-text("Membership"), [role="tab"]:has-text("Benefit")').first();
+        if (await benefitLink.isVisible({ timeout: 3000 }).catch(() => false)) {
+          const linkText = await benefitLink.textContent();
+          console.log(`Found benefit section: "${linkText.trim()}"`);
+          await benefitLink.click();
           await page.waitForTimeout(3000);
 
-          // Check if suggestions appeared
-          const suggestions = await page.locator('[class*="dropdown"], [class*="suggestion"], [class*="result"], [class*="option"], [role="listbox"], [role="option"]').allTextContents();
-          console.log('Search suggestions:', JSON.stringify(suggestions.map(s => s.trim()).filter(Boolean)));
+          const benefitBtns = await page.locator('button:visible').allTextContents();
+          console.log('Benefit section buttons:', JSON.stringify(benefitBtns.map(b => b.trim()).filter(Boolean)));
 
-          const afterSearchBtns = await page.locator('button:visible').allTextContents();
-          console.log('Buttons after search:', JSON.stringify(afterSearchBtns.map(b => b.trim()).filter(Boolean)));
+          await page.screenshot({ path: '/tmp/playtomic-customer-benefits.png', fullPage: true });
+          console.log('[Screenshot] customer-benefits');
 
-          await page.screenshot({ path: '/tmp/playtomic-search-todd.png', fullPage: true });
-          console.log('[Screenshot] search-todd');
+          // Look for "Add benefit" or "Assign benefit" button
+          const addBenBtn = page.locator('button:has-text("Add"), button:has-text("Assign"), button:has-text("Grant")').first();
+          if (await addBenBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+            const btnText = await addBenBtn.textContent();
+            console.log(`Found add benefit button: "${btnText.trim()}"`);
+            await addBenBtn.click();
+            await page.waitForTimeout(3000);
+
+            // Log the dialog
+            const dialogContent = await page.locator('[role="dialog"], [class*="modal"], [class*="dialog"]').first().textContent().catch(() => '');
+            console.log('Dialog content:', dialogContent?.slice(0, 500));
+
+            const dialogBtns = await page.locator('button:visible').allTextContents();
+            console.log('Dialog buttons:', JSON.stringify(dialogBtns.map(b => b.trim()).filter(Boolean)));
+
+            const dialogInputs = await page.locator('input:visible, select:visible').evaluateAll(els =>
+              els.map(el => ({ tag: el.tagName, type: el.type, placeholder: el.placeholder, name: el.name, options: el.tagName === 'SELECT' ? Array.from(el.options).map(o => o.text).slice(0, 10) : undefined }))
+            );
+            console.log('Dialog inputs:', JSON.stringify(dialogInputs));
+
+            await page.screenshot({ path: '/tmp/playtomic-add-benefit-dialog.png', fullPage: true });
+            console.log('[Screenshot] add-benefit-dialog');
+          }
+        } else {
+          console.log('No Benefits tab found on customer profile.');
+          await page.screenshot({ path: '/tmp/playtomic-customer-profile.png', fullPage: true });
+          console.log('[Screenshot] customer-profile');
         }
+      } else {
+        console.log('Todd not found in search results.');
       }
     } else {
-      console.log('Royal benefit not found on page.');
-      const pageText = await page.locator('body').textContent();
-      console.log('Page text:', pageText?.slice(0, 500));
+      console.log('No search input found on customers page.');
     }
 
   } finally {
