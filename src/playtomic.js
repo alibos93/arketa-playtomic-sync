@@ -71,15 +71,17 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     console.log('Step 1: Select Customers...');
     await page.click('button:has-text("New Import")');
     await page.waitForTimeout(3000);
+    await dismissModals(page);
 
-    // Click the Customers card
-    const card = page.locator('div:has(h2:has-text("Customers")):not(:has(h2:has-text("Wallet")))').first();
-    if (await card.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await card.click();
-    } else {
-      // Try clicking just the heading
-      await page.locator('h2:has-text("Customers")').first().click();
-    }
+    // Wait for the step 1 page to load
+    await page.waitForSelector('text=Select an object', { timeout: 10000 });
+    await screenshot(page, '00-step1');
+
+    // Click the first card (Customers) — it's the left card
+    // Use a broad selector since card class names may vary
+    const customerText = page.locator('text=The people you work with');
+    await customerText.waitFor({ timeout: 5000 });
+    await customerText.click();
     await page.waitForTimeout(1000);
     await clickNext(page);
     console.log('Step 1 done.');
