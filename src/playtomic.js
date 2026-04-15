@@ -12,20 +12,17 @@ async function screenshot(page, name) {
 }
 
 async function dismissModals(page) {
-  const dismissSelectors = [
+  const selectors = [
     'button:has-text("Skip for now")',
     'button:has-text("Skip")',
     'button:has-text("Close")',
     'button:has-text("Dismiss")',
-    'button:has-text("Later")',
-    'button:has-text("Not now")',
     '[aria-label="Close"]',
   ];
-
-  for (const selector of dismissSelectors) {
-    const btn = page.locator(selector).first();
+  for (const sel of selectors) {
+    const btn = page.locator(sel).first();
     if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
-      console.log(`Dismissing modal: ${selector}`);
+      console.log(`Dismissing modal: ${sel}`);
       await btn.click();
       await page.waitForTimeout(1000);
     }
@@ -44,114 +41,116 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
   const page = await browser.newPage();
 
   try {
-    // 1. Login
+    // === LOGIN ===
     console.log('Logging into Playtomic...');
     await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`);
     await page.waitForLoadState('networkidle');
-
     await page.fill('input[type="email"], input[name="email"]', email);
     await page.fill('input[type="password"], input[name="password"]', password);
     await page.click('button[type="submit"]');
-
     await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 15000 });
-    console.log('Logged in successfully.');
-
+    console.log('Logged in.');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
     await dismissModals(page);
 
-    // 2. Go to Customers > Imports
-    console.log('Navigating to Customers > Imports...');
+    // === NAVIGATE TO IMPORTS ===
+    console.log('Going to Customers > Imports...');
     await page.click('a[href="/dashboard/customers"]');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
-
-    // Click the Imports tab
     await page.click('a:has-text("Imports")');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
-    await screenshot(page, '01-imports-tab');
 
-    // 3. Click "New Import"
-    console.log('Clicking New Import...');
+    // === STEP 1: Select import type ===
+    console.log('Starting New Import...');
     await page.click('button:has-text("New Import")');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
-    await screenshot(page, '02-new-import');
-    console.log(`URL: ${page.url()}`);
+    await page.waitForTimeout(3000);
 
-    // Debug: log everything visible
-    const buttons = await page.locator('button:visible').allTextContents();
-    console.log('Buttons:', JSON.stringify(buttons.map(b => b.trim()).filter(Boolean)));
+    // Select "Customers" card
+    console.log('Step 1: Selecting Customers...');
+    const customersCard = page.locator('text=Customers >> xpath=ancestor::div[contains(@class,"card") or contains(@class,"option") or @role="button"]').first();
+    if (await customersCard.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await customersCard.click();
+    } else {
+      // Fallback: click on the Customers text directly
+      await page.locator('h2:has-text("Customers"), h3:has-text("Customers"), div:has-text("Customers"):not(:has-text("Wallets"))').first().click();
+    }
+    await page.waitForTimeout(1000);
 
-    const inputs = await page.locator('input').evaluateAll(els =>
-      els.map(el => ({ type: el.type, name: el.name, id: el.id, accept: el.accept, hidden: el.hidden, style: el.style.display }))
+    // Click Next
+    await page.click('button:has-text("Next")');
+    await page.waitForTimeout(3000);
+    await screenshot(page, '01-step2');
+    console.log(`Step 2 URL: ${page.url()}`);
+
+    // === STEP 2: Upload file ===
+    // Log what's on the page
+    const step2Buttons = await page.locator('button:visible').allTextContents();
+    console.log('Step 2 buttons:', JSON.stringify(step2Buttons.map(b => b.trim()).filter(Boolean)));
+
+    const step2Inputs = await page.locator('input').evaluateAll(els =>
+      els.map(el => ({ type: el.type, name: el.name, id: el.id, accept: el.accept }))
     );
-    console.log('Inputs:', JSON.stringify(inputs));
+    console.log('Step 2 inputs:', JSON.stringify(step2Inputs));
 
-    // Look for file input (may be hidden behind a button)
-    const fileInput = page.locator('input[type="file"]');
-    const fileInputCount = await fileInput.count();
-    console.log(`File inputs: ${fileInputCount}`);
+    const step2Text = await page.locator('main, [class*="content"], [class*="step"]').first().textContent().catch(() => '');
+    console.log('Step 2 text:', step2Text?.slice(0, 300));
 
-    if (fileInputCount > 0) {
-      console.log('Uploading CSV via file input...');
+    // Try to find file input
+    let fileInput = page.locator('input[type="file"]');
+    let fileCount = await fileInput.count();
+
+    if (fileCount === 0) {
+      // Maybe need to click a "Choose file" or "Upload" button first
+      const uploadTrigger = page.locator('button:has-text("Choose"), button:has-text("Browse"), button:has-text("Upload"), button:has-text("Select file"), label:has-text("Choose"), label:has-text("Browse"), label:has-text("Upload"), [class*="dropzone"], [class*="upload"]').first();
+      if (await uploadTrigger.isVisible({ timeout: 3000 }).catch(() => false)) {
+        console.log('Clicking upload trigger...');
+        await uploadTrigger.click();
+        await page.waitForTimeout(2000);
+        fileCount = await fileInput.count();
+      }
+    }
+
+    console.log(`File inputs found: ${fileCount}`);
+
+    if (fileCount > 0) {
+      console.log('Uploading CSV...');
       await fileInput.first().setInputFiles(tmpPath);
       await page.waitForTimeout(3000);
-      await screenshot(page, '03-file-selected');
+      await screenshot(page, '02-file-uploaded');
 
-      // Click next/upload/continue
-      const nextBtn = page.locator('button:has-text("Upload"), button:has-text("Next"), button:has-text("Import"), button:has-text("Continue"), button:has-text("Confirm")').first();
-      if (await nextBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-        const btnText = await nextBtn.textContent();
-        console.log(`Clicking: "${btnText.trim()}"`);
-        await nextBtn.click();
-        await page.waitForLoadState('networkidle');
-        await page.waitForTimeout(3000);
-        await screenshot(page, '04-after-upload');
-
-        // Check for column mapping step
-        const mapBtns = await page.locator('button:visible').allTextContents();
-        console.log('After upload buttons:', JSON.stringify(mapBtns.map(b => b.trim()).filter(Boolean)));
-
-        // If there's another Next/Confirm step (column mapping)
-        const confirmBtn = page.locator('button:has-text("Next"), button:has-text("Import"), button:has-text("Confirm"), button:has-text("Finish")').first();
-        if (await confirmBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-          const cText = await confirmBtn.textContent();
-          console.log(`Clicking: "${cText.trim()}"`);
-          await confirmBtn.click();
-          await page.waitForLoadState('networkidle');
+      // Click through remaining steps
+      for (let step = 3; step <= 6; step++) {
+        const nextBtn = page.locator('button:has-text("Next"), button:has-text("Import"), button:has-text("Continue"), button:has-text("Confirm"), button:has-text("Finish")').first();
+        if (await nextBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+          const text = await nextBtn.textContent();
+          console.log(`Clicking: "${text.trim()}"`);
+          await nextBtn.click();
+          await page.waitForLoadState('networkidle').catch(() => {});
           await page.waitForTimeout(3000);
-          await screenshot(page, '05-final-confirm');
-
-          // One more confirm if needed
-          const lastBtn = page.locator('button:has-text("Import"), button:has-text("Confirm"), button:has-text("Finish")').first();
-          if (await lastBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            const lText = await lastBtn.textContent();
-            console.log(`Clicking: "${lText.trim()}"`);
-            await lastBtn.click();
-            await page.waitForTimeout(5000);
-            await screenshot(page, '06-done');
-          }
+          await screenshot(page, `0${step}-step`);
+        } else {
+          console.log(`No next button at step ${step}, done.`);
+          break;
         }
-
-        console.log('CSV import completed.');
       }
+      console.log('CSV import completed.');
     } else {
-      // No file input — look for drag/drop or other UI
-      console.log('No file input found. Checking for other upload patterns...');
+      // Hidden file input — try setting via JavaScript
+      const hiddenCount = await page.evaluate(() => document.querySelectorAll('input[type="file"]').length);
+      console.log(`Hidden file inputs via JS: ${hiddenCount}`);
 
-      // Maybe there's a drop area or "Choose file" text
-      const allText = await page.locator('body').textContent();
-      console.log('Page text (first 500):', allText?.slice(0, 500));
-
-      // Try looking for hidden file inputs by checking shadow DOM etc
-      const hiddenInputs = await page.evaluate(() => {
-        return document.querySelectorAll('input[type="file"]').length;
-      });
-      console.log(`Hidden file inputs (via evaluate): ${hiddenInputs}`);
-
-      await screenshot(page, '03-no-file-input');
+      if (hiddenCount > 0) {
+        console.log('Found hidden file input, uploading...');
+        await page.locator('input[type="file"]').first().setInputFiles(tmpPath, { force: true });
+        await page.waitForTimeout(3000);
+        await screenshot(page, '02-hidden-upload');
+      } else {
+        console.log('ERROR: No file input found anywhere.');
+        await screenshot(page, '02-error-no-input');
+      }
     }
 
     await screenshot(page, '99-final');
