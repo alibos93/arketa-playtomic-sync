@@ -88,15 +88,34 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    // Log import history
-    const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
-    console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 100)).filter(Boolean).slice(0, 5)));
-
-    const pageText = await page.locator('main, [class*="content"]').first().textContent().catch(() => '');
-    console.log('Imports page text:', pageText?.slice(0, 500));
-
     await page.screenshot({ path: '/tmp/playtomic-import-status.png', fullPage: true });
     console.log('[Screenshot] import-status');
+
+    // Log import history
+    const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
+    console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 150)).filter(Boolean).slice(0, 5)));
+
+    // Try to download the error report from the most recent import
+    const downloadErrorLink = page.locator('text=Download error rows, a:has-text("Download error"), button:has-text("Download error")').first();
+    if (await downloadErrorLink.isVisible({ timeout: 3000 }).catch(() => false)) {
+      console.log('Found "Download error" link — downloading error report...');
+      const [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: 10000 }).catch(() => null),
+        downloadErrorLink.click(),
+      ]);
+      if (download) {
+        const errorPath = '/tmp/playtomic-import-errors.csv';
+        await download.saveAs(errorPath);
+        const errorContent = fs.readFileSync(errorPath, 'utf-8');
+        console.log('=== IMPORT ERROR REPORT ===');
+        console.log(errorContent);
+        console.log('=== END ERROR REPORT ===');
+      } else {
+        console.log('Download event not triggered.');
+      }
+    } else {
+      console.log('No "Download error" link found.');
+    }
 
     await page.screenshot({ path: '/tmp/playtomic-import-result.png', fullPage: true });
     console.log('Done.');
