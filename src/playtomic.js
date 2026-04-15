@@ -94,10 +94,6 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
     // Log import history
     const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
-    console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 150)).filter(Boolean).slice(0, 5)));
-
-    // Log import history
-    const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
     console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 150)).filter(Boolean).slice(0, 3)));
 
     await page.screenshot({ path: '/tmp/playtomic-import-result.png', fullPage: true });
