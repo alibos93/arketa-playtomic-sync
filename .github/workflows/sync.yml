@@ -33,11 +33,11 @@ jobs:
           MEMBERSHIP_NAMES: ${{ secrets.MEMBERSHIP_NAMES }}
         run: node src/index.js
 
-      - name: Upload screenshots
+      - name: Upload screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playtomic-debug
-          path: /tmp/playtomic-*.png
+          name: import-result
+          path: /tmp/playtomic-import-result.png
           retention-days: 7
           if-no-files-found: warn

@@ -3,13 +3,6 @@ const fs = require('fs');
 const path = require('path');
 
 const PLAYTOMIC_MANAGER_URL = 'https://manager.playtomic.io';
-const SCREENSHOT_DIR = '/tmp';
-
-async function screenshot(page, name) {
-  const p = path.join(SCREENSHOT_DIR, `playtomic-${name}.png`);
-  await page.screenshot({ path: p, fullPage: true });
-  console.log(`[Screenshot] ${name}`);
-}
 
 async function dismissModals(page) {
   for (const sel of ['button:has-text("Skip for now")', 'button:has-text("Skip")', '[aria-label="Close"]']) {
@@ -21,21 +14,11 @@ async function dismissModals(page) {
   }
 }
 
-async function clickNext(page) {
-  const btn = page.locator('button:has-text("Next")').first();
-  await btn.waitFor({ state: 'visible', timeout: 5000 });
-  // Wait until the button is enabled (not disabled/greyed out)
-  await page.waitForFunction(
-    () => !document.querySelector('button')?.disabled,
-    { timeout: 5000 }
-  ).catch(() => {});
-  await btn.click();
-  await page.waitForTimeout(3000);
-}
-
 async function uploadCSVToPlaytomic(csvContent, email, password) {
   const tmpPath = path.join('/tmp', `playtomic-import-${Date.now()}.csv`);
   fs.writeFileSync(tmpPath, csvContent);
+
+  const screenshotPath = '/tmp/playtomic-import-result.png';
 
   const browser = await chromium.launch({
     headless: true,
@@ -58,8 +41,8 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.waitForTimeout(3000);
     await dismissModals(page);
 
-    // === GO TO IMPORTS ===
-    console.log('Going to Customers > Imports...');
+    // === NAVIGATE TO IMPORTS ===
+    console.log('Navigating to Customers > Imports...');
     await page.click('a[href="/dashboard/customers"]');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
@@ -67,97 +50,54 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    // === WIZARD STEP 1: Select import type (Customers) ===
-    console.log('Step 1: Select Customers...');
+    // === STEP 1: Select import type → Customers ===
+    console.log('Starting import wizard...');
     await page.click('button:has-text("New Import")');
     await page.waitForTimeout(3000);
     await dismissModals(page);
 
-    // Wait for the step 1 page to load
     await page.waitForSelector('text=Select an object', { timeout: 10000 });
-    await screenshot(page, '00-step1');
-
-    // Click the first card (Customers) — it's the left card
-    // Use a broad selector since card class names may vary
-    const customerText = page.locator('text=The people you work with');
-    await customerText.waitFor({ timeout: 5000 });
-    await customerText.click();
+    await page.locator('text=The people you work with').click();
     await page.waitForTimeout(1000);
-    await clickNext(page);
-    console.log('Step 1 done.');
 
-    // === WIZARD STEP 2: Data handling consent ===
-    console.log('Step 2: Consent checkbox...');
-    const checkbox = page.locator('#hasDataHandlingPermission');
-    await checkbox.check();
+    // Click Next (wait for it to be enabled)
+    const nextBtn1 = page.locator('button:has-text("Next")');
+    await nextBtn1.waitFor({ state: 'visible', timeout: 5000 });
     await page.waitForTimeout(500);
-    await clickNext(page);
-    console.log('Step 2 done.');
-    await screenshot(page, '01-step3');
-    console.log(`Step 3 URL: ${page.url()}`);
+    await nextBtn1.click();
+    await page.waitForTimeout(3000);
+    console.log('Step 1 done: Selected Customers.');
 
-    // === WIZARD STEP 3: Upload file ===
-    // Log what's on the page
-    const step3Buttons = await page.locator('button:visible').allTextContents();
-    console.log('Step 3 buttons:', JSON.stringify(step3Buttons.map(b => b.trim()).filter(Boolean)));
+    // === STEP 2: Data handling consent ===
+    await page.locator('#hasDataHandlingPermission').check();
+    await page.waitForTimeout(500);
+    const nextBtn2 = page.locator('button:has-text("Next")');
+    await nextBtn2.click();
+    await page.waitForTimeout(3000);
+    console.log('Step 2 done: Consent accepted.');
 
-    const step3Inputs = await page.locator('input').evaluateAll(els =>
-      els.map(el => ({ type: el.type, name: el.name, id: el.id, accept: el.accept }))
-    );
-    console.log('Step 3 inputs:', JSON.stringify(step3Inputs));
+    // === STEP 3: Upload CSV file ===
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.waitFor({ timeout: 10000 });
+    await fileInput.setInputFiles(tmpPath);
+    await page.waitForTimeout(3000);
+    console.log('Step 3: CSV file uploaded.');
 
-    const pageText = await page.locator('body').textContent();
-    const relevantText = pageText?.match(/step 3[^]*?(?=step 4|$)/i)?.[0]?.slice(0, 300) || pageText?.slice(0, 500);
-    console.log('Page text:', relevantText);
+    // Click Next to submit the import
+    const nextBtn3 = page.locator('button:has-text("Next")');
+    await nextBtn3.click();
+    await page.waitForTimeout(5000);
 
-    // Try to find file input
-    let fileInput = page.locator('input[type="file"]');
-    let fileCount = await fileInput.count();
-
-    // If not visible, check for hidden ones
-    if (fileCount === 0) {
-      const hiddenCount = await page.evaluate(() => document.querySelectorAll('input[type="file"]').length);
-      console.log(`Hidden file inputs: ${hiddenCount}`);
-      if (hiddenCount > 0) fileCount = hiddenCount;
+    // === STEP 4: Dismiss "processing" confirmation modal ===
+    const okBtn = page.locator('button:has-text("Ok, got it"), button:has-text("Ok"), button:has-text("Got it")').first();
+    if (await okBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+      console.log('Import is processing!');
+      await okBtn.click();
+      await page.waitForTimeout(2000);
     }
 
-    if (fileCount > 0) {
-      console.log('Step 3: Uploading CSV...');
-      await fileInput.first().setInputFiles(tmpPath);
-      await page.waitForTimeout(3000);
-      await screenshot(page, '02-file-uploaded');
-
-      // Continue through remaining wizard steps
-      for (let step = 4; step <= 7; step++) {
-        const nextBtn = page.locator('button:has-text("Next"), button:has-text("Import"), button:has-text("Confirm"), button:has-text("Finish")').first();
-        if (await nextBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-          const text = await nextBtn.textContent();
-          console.log(`Step ${step}: Clicking "${text.trim()}"...`);
-          await nextBtn.click();
-          await page.waitForTimeout(3000);
-          await screenshot(page, `0${step}-wizard`);
-
-          // Log any column mapping or review steps
-          const stepBtns = await page.locator('button:visible').allTextContents();
-          console.log(`Step ${step} buttons:`, JSON.stringify(stepBtns.map(b => b.trim()).filter(Boolean)));
-        } else {
-          console.log(`No more wizard steps at step ${step}.`);
-          break;
-        }
-      }
-      console.log('CSV import completed!');
-    } else {
-      console.log('No file input found. Taking diagnostic screenshot...');
-      await screenshot(page, '02-no-file-input');
-
-      // Log all elements for debugging
-      const allElements = await page.locator('*:visible').evaluateAll(els =>
-        els.slice(0, 50).map(el => ({ tag: el.tagName, text: el.textContent?.trim().slice(0, 40), class: el.className?.toString().slice(0, 30) }))
-      );
-      console.log('Visible elements:', JSON.stringify(allElements.slice(0, 20)));
-    }
-
-    await screenshot(page, '99-final');
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log('CSV import completed successfully.');
 
   } finally {
     await browser.close();
