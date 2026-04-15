@@ -79,9 +79,27 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
       await page.waitForTimeout(2000);
     }
 
-    const screenshotPath = '/tmp/playtomic-import-result.png';
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log('Import completed — customers with membership benefits assigned via CSV.');
+    // Check import status on the Imports page
+    console.log('Checking import status...');
+    await page.click('a[href="/dashboard/customers"]');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+    await page.click('a:has-text("Imports")');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    // Log import history
+    const importRows = await page.locator('table tr, [class*="row"]').allTextContents();
+    console.log('Import history:', JSON.stringify(importRows.map(r => r.trim().slice(0, 100)).filter(Boolean).slice(0, 5)));
+
+    const pageText = await page.locator('main, [class*="content"]').first().textContent().catch(() => '');
+    console.log('Imports page text:', pageText?.slice(0, 500));
+
+    await page.screenshot({ path: '/tmp/playtomic-import-status.png', fullPage: true });
+    console.log('[Screenshot] import-status');
+
+    await page.screenshot({ path: '/tmp/playtomic-import-result.png', fullPage: true });
+    console.log('Done.');
 
   } finally {
     await browser.close();
