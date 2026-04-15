@@ -77,17 +77,8 @@ class ArketaClient {
         else if (arketaName.includes('core')) playtomicBenefit = 'Core Membership';
         else if (arketaName.includes('rise')) playtomicBenefit = 'Rise Membership';
 
-        // Calculate expiry as 12 months from purchase date
-        let expiresDate = null;
-        const purchaseDate = s.purchase_date?.value || s.purchase_date;
-        if (purchaseDate) {
-          const d = new Date(purchaseDate);
-          d.setMonth(d.getMonth() + 12);
-          expiresDate = d.toISOString();
-        }
-
-        // Debug: log all date fields for verification
-        console.log(`[Arketa] ${s.client_name}: purchase_date=${JSON.stringify(s.purchase_date)}, renewal_date=${JSON.stringify(s.renewal_date)}, next_renewal_date=${JSON.stringify(s.next_renewal_date)}, calculated_expiry=${expiresDate}`);
+        // All memberships start on opening day (July 1) and last 12 months
+        const expiresDate = '2027-07-01T00:00:00.000Z';
 
         return {
         first_name: s.client_name?.split(' ')[0] || '',
