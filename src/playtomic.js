@@ -28,7 +28,10 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
   try {
     // === LOGIN ===
     console.log('Logging into Playtomic...');
-    await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`, { waitUntil: 'networkidle' });
+    // Use 'domcontentloaded' instead of 'networkidle' — Playtomic has long-polling that
+    // never fully idles, causing flaky 30s timeouts.
+    await page.goto(`${PLAYTOMIC_MANAGER_URL}/login`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 30000 });
     await page.fill('input[type="email"], input[name="email"]', email);
     await page.fill('input[type="password"], input[name="password"]', password);
     await page.click('button[type="submit"]');
