@@ -43,11 +43,9 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     // === NAVIGATE TO IMPORTS ===
     console.log('Navigating to Customers > Imports...');
     await page.click('a[href="/dashboard/customers"]');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
     await page.click('a:has-text("Imports")');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     // === STEP 1: Select Customers ===
     console.log('Starting import wizard...');
@@ -86,11 +84,9 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     // Check import status on the Imports page
     console.log('Checking import status...');
     await page.click('a[href="/dashboard/customers"]');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
-    await page.click('a:has-text("Imports")');
-    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
+    await page.click('a:has-text("Imports")');
+    await page.waitForTimeout(4000);
 
     await page.screenshot({ path: '/tmp/playtomic-import-status.png', fullPage: true });
     console.log('[Screenshot] import-status');
