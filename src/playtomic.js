@@ -94,13 +94,10 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.waitForTimeout(5000);
     console.log('Step 2: CSV uploaded and submitted.');
 
-    // === Dismiss confirmation modal ===
-    const okBtn = page.locator('button:has-text("Ok, got it"), button:has-text("Got it")').first();
-    if (await okBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await okBtn.click();
-      await page.waitForTimeout(2000);
-      console.log('Dismissed confirmation modal.');
-    }
+    // === Close the wizard ===
+    // The new Playtomic flow leaves the wizard open after submission with no
+    // "Ok, got it" confirmation. Close it explicitly so the dashboard is clickable.
+    await dismissModals(page);
 
     // Check import status on the Imports page
     console.log('Checking import status...');
