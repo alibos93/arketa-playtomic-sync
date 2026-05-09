@@ -36,7 +36,6 @@ function buildPlaytomicCSV(members) {
     phone_number: formatPhone(m.phone),
     gender: (m.gender || '').toUpperCase() || '',
     birthdate: formatDate(m.date_of_birth),
-    commercial_communications: 'true',
     category_name: m.membership_name || '',
     category_expires: formatDate(m.membership_expires),
   }));
@@ -49,7 +48,6 @@ function buildPlaytomicCSV(members) {
       'phone_number',
       'gender',
       'birthdate',
-      'commercial_communications',
       'category_name',
       'category_expires',
     ],
