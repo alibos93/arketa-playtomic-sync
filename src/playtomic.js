@@ -4,12 +4,38 @@ const path = require('path');
 
 const PLAYTOMIC_MANAGER_URL = 'https://manager.playtomic.io';
 
-async function dismissModals(page) {
-  for (const sel of ['button:has-text("Skip for now")', 'button:has-text("Skip")', '[aria-label="Close"]']) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
-      await btn.click();
-      await page.waitForTimeout(1000);
+async function dismissModals(page, { attempts = 4, timeout = 500 } = {}) {
+  const buttonTexts = [
+    'Skip for now', 'Skip', 'Got it', 'Ok, got it', 'OK, got it',
+    'Continue', 'Accept', 'Dismiss', 'Maybe later', 'Not now',
+  ];
+  for (let i = 0; i < attempts; i++) {
+    let dismissed = false;
+    for (const text of buttonTexts) {
+      const btn = page.locator(`#modal button:has-text("${text}"), button:has-text("${text}")`).first();
+      if (await btn.isVisible({ timeout }).catch(() => false)) {
+        await btn.click().catch(() => {});
+        await page.waitForTimeout(800);
+        dismissed = true;
+        break;
+      }
+    }
+    if (!dismissed) {
+      const closeBtn = page.locator('#modal [aria-label="Close"], #modal button[aria-label*="close" i]').first();
+      if (await closeBtn.isVisible({ timeout }).catch(() => false)) {
+        await closeBtn.click().catch(() => {});
+        await page.waitForTimeout(800);
+        dismissed = true;
+      }
+    }
+    if (!dismissed) {
+      const modal = page.locator('#modal [class*="DialogContainer"]').first();
+      if (await modal.isVisible({ timeout }).catch(() => false)) {
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(800);
+      } else {
+        return;
+      }
     }
   }
 }
@@ -44,37 +70,31 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     console.log('Navigating to Customers > Imports...');
     await page.click('a[href="/dashboard/customers"]');
     await page.waitForTimeout(3000);
+    await dismissModals(page);
     await page.click('a:has-text("Imports")');
     await page.waitForTimeout(3000);
-
-    // === STEP 1: Select Customers ===
-    console.log('Starting import wizard...');
-    await page.click('button:has-text("New Import")');
-    await page.waitForTimeout(3000);
     await dismissModals(page);
-    await page.waitForSelector('text=Select an object', { timeout: 10000 });
-    await page.locator('text=The people you work with').click();
-    await page.waitForTimeout(1000);
-    await page.locator('button:has-text("Next")').click();
-    await page.waitForTimeout(3000);
-    console.log('Step 1: Selected Customers.');
 
-    // === STEP 2: Consent ===
-    await page.locator('#hasDataHandlingPermission').check();
+    // === STEP 1: Confirm permissions (Playtomic redesigned the wizard 2026-05-07: now 2 steps) ===
+    console.log('Starting import wizard...');
+    await page.locator('button:has-text("New Import"), button:has-text("New customers"), button:has-text("Import")').first().click();
+    await page.waitForTimeout(3000);
+    await page.getByText(/I confirm that I have the necessary permissions/i).waitFor({ timeout: 15000 });
+    await page.locator('input[type="checkbox"]').first().check();
     await page.waitForTimeout(500);
     await page.locator('button:has-text("Next")').click();
     await page.waitForTimeout(3000);
-    console.log('Step 2: Consent accepted.');
+    console.log('Step 1: Confirmed permissions.');
 
-    // === STEP 3: Upload CSV (includes category_name for benefit assignment) ===
+    // === STEP 2: Upload CSV ===
     await page.locator('input[type="file"]').setInputFiles(tmpPath);
     await page.waitForTimeout(3000);
-    await page.locator('button:has-text("Next")').click();
+    await page.locator('button:has-text("Next"), button:has-text("Import"), button:has-text("Submit")').first().click();
     await page.waitForTimeout(5000);
-    console.log('Step 3: CSV uploaded and submitted.');
+    console.log('Step 2: CSV uploaded and submitted.');
 
-    // === Dismiss "Ok, got it" confirmation modal ===
-    const okBtn = page.locator('button:has-text("Ok, got it")').first();
+    // === Dismiss confirmation modal ===
+    const okBtn = page.locator('button:has-text("Ok, got it"), button:has-text("Got it")').first();
     if (await okBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
       await okBtn.click();
       await page.waitForTimeout(2000);
@@ -85,6 +105,7 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     console.log('Checking import status...');
     await page.click('a[href="/dashboard/customers"]');
     await page.waitForTimeout(3000);
+    await dismissModals(page);
     await page.click('a:has-text("Imports")');
     await page.waitForTimeout(4000);
 
@@ -98,6 +119,12 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.screenshot({ path: '/tmp/playtomic-import-result.png', fullPage: true });
     console.log('Done.');
 
+  } catch (err) {
+    try {
+      await page.screenshot({ path: '/tmp/playtomic-failure.png', fullPage: true });
+      console.log('[Screenshot] failure captured at /tmp/playtomic-failure.png');
+    } catch {}
+    throw err;
   } finally {
     await browser.close();
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
