@@ -88,10 +88,33 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     console.log('Step 1: Confirmed permissions.');
 
     // === STEP 2: Upload CSV ===
-    await page.locator('input[type="file"]').setInputFiles(tmpPath);
-    // Give Playtomic time to validate the file client-side before Next becomes
-    // functionally enabled. Visual state may show the file long before this.
-    await page.waitForTimeout(8000);
+    // Use the filechooser pattern instead of setInputFiles — clicking the
+    // dropzone's "Import file" link triggers Playtomic's full upload+validate
+    // event chain, which setInputFiles bypasses (leaves Next functionally dead
+    // even though file appears in the UI).
+    let uploaded = false;
+    try {
+      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 8000 });
+      await page.locator('#modal').getByText(/^Import file$/i).last().click({ force: true });
+      const fileChooser = await fileChooserPromise;
+      await fileChooser.setFiles(tmpPath);
+      uploaded = true;
+      console.log('Step 2: uploaded via filechooser.');
+    } catch (e) {
+      console.log(`Filechooser path failed (${e.message}); falling back to setInputFiles.`);
+      await page.locator('input[type="file"]').setInputFiles(tmpPath);
+    }
+    // Wait for Playtomic to upload and validate the file server-side before
+    // attempting Next. Network roundtrip can take several seconds.
+    await page.waitForTimeout(10000);
+    const buttonState = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('#modal button')).map(b => ({
+        text: b.textContent.trim().slice(0, 40),
+        disabled: b.disabled,
+        ariaDisabled: b.getAttribute('aria-disabled'),
+      }));
+    });
+    console.log('Wizard buttons before Next:', JSON.stringify(buttonState));
     await page.screenshot({ path: '/tmp/playtomic-step2-before-next.png', fullPage: true });
     console.log('[Screenshot] step2-before-next');
 
