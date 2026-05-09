@@ -51,6 +51,14 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
   const page = await browser.newPage();
 
+  // Diagnostic: log all network responses related to imports/uploads.
+  page.on('response', resp => {
+    const url = resp.url();
+    if (url.includes('import') || url.includes('upload') || url.includes('customer')) {
+      console.log(`[Net] ${resp.status()} ${resp.request().method()} ${url}`);
+    }
+  });
+
   try {
     // === LOGIN ===
     console.log('Logging into Playtomic...');
@@ -92,6 +100,21 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     // dropzone's "Import file" link triggers Playtomic's full upload+validate
     // event chain, which setInputFiles bypasses (leaves Next functionally dead
     // even though file appears in the UI).
+    // Diagnostic: download Playtomic's official CSV sample so we can see the
+    // exact column headers and data format they expect.
+    try {
+      const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
+      await page.locator('text=Download CSV sample').click();
+      const dl = await downloadPromise;
+      const samplePath = await dl.path();
+      const sampleContent = require('fs').readFileSync(samplePath, 'utf8');
+      console.log('=== Playtomic CSV sample ===');
+      console.log(sampleContent.split('\n').slice(0, 4).join('\n'));
+      console.log('=== end sample ===');
+    } catch (e) {
+      console.log(`CSV sample download failed: ${e.message}`);
+    }
+
     let uploaded = false;
     try {
       const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 8000 });
