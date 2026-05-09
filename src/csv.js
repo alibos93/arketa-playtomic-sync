@@ -30,28 +30,35 @@ function formatPhone(phone) {
  * Includes category_name to auto-assign membership benefits.
  */
 function buildPlaytomicCSV(members) {
-  // Headers must match Playtomic's expected labels exactly (post-2026-05-07
-  // wizard redesign). Lowercase/snake_case variants get silently rejected.
+  // Playtomic's wizard displays Title Case labels, but the backend
+  // (/api/v1/user_imports) requires snake_case lowercase headers and rejects
+  // anything else as "extra_headers". The redesigned schema also requires the
+  // two new columns benefit_price_id and next_due_date — empty values are OK
+  // but the headers themselves must be present.
   const rows = members.map(m => ({
-    'Name': `${m.first_name || ''} ${m.last_name || ''}`.trim(),
-    'Email': m.email || '',
-    'Phone number': formatPhone(m.phone),
-    'Gender': (m.gender || '').toUpperCase() || '',
-    'Birth date': formatDate(m.date_of_birth),
-    'Category name': m.membership_name || '',
-    'Category expires': formatDate(m.membership_expires),
+    name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+    email: m.email || '',
+    phone_number: formatPhone(m.phone),
+    gender: (m.gender || '').toUpperCase() || '',
+    birthdate: formatDate(m.date_of_birth),
+    category_name: m.membership_name || '',
+    category_expires: formatDate(m.membership_expires),
+    benefit_price_id: '',
+    next_due_date: '',
   }));
 
   return stringify(rows, {
     header: true,
     columns: [
-      'Name',
-      'Email',
-      'Phone number',
-      'Gender',
-      'Birth date',
-      'Category name',
-      'Category expires',
+      'name',
+      'email',
+      'phone_number',
+      'gender',
+      'birthdate',
+      'category_name',
+      'category_expires',
+      'benefit_price_id',
+      'next_due_date',
     ],
   });
 }
