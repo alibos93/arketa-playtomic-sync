@@ -51,11 +51,18 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
   const page = await browser.newPage();
 
-  // Diagnostic: log all network responses related to imports/uploads.
-  page.on('response', resp => {
+  // Diagnostic: log Playtomic API responses for the import endpoint, including
+  // body for non-2xx so we can see why uploads are rejected.
+  page.on('response', async resp => {
     const url = resp.url();
-    if (url.includes('import') || url.includes('upload') || url.includes('customer')) {
-      console.log(`[Net] ${resp.status()} ${resp.request().method()} ${url}`);
+    if (url.includes('user_imports')) {
+      const status = resp.status();
+      const method = resp.request().method();
+      let body = '';
+      if (status >= 400) {
+        try { body = ` body=${(await resp.text()).slice(0, 800)}`; } catch {}
+      }
+      console.log(`[Net] ${status} ${method} ${url}${body}`);
     }
   });
 
