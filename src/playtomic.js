@@ -89,14 +89,26 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
 
     // === STEP 2: Upload CSV ===
     await page.locator('input[type="file"]').setInputFiles(tmpPath);
-    await page.waitForTimeout(3000);
-    await page.locator('#modal button:has-text("Next")').last().click();
-    await page.waitForTimeout(5000);
-    console.log('Step 2: CSV uploaded and submitted.');
+    await page.waitForTimeout(4000);
+    await page.screenshot({ path: '/tmp/playtomic-step2-before-next.png', fullPage: true });
+    console.log('[Screenshot] step2-before-next');
 
-    // === Close the wizard ===
-    // The new Playtomic flow leaves the wizard open after submission with no
-    // "Ok, got it" confirmation. Close it explicitly so the dashboard is clickable.
+    const nextBtn = page.locator('#modal button:has-text("Next")').last();
+    await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
+    await nextBtn.click({ force: true });
+    console.log('Step 2: clicked Next.');
+    await page.waitForTimeout(8000);
+    await page.screenshot({ path: '/tmp/playtomic-step2-after-next.png', fullPage: true });
+    console.log('[Screenshot] step2-after-next');
+
+    // The new Playtomic flow may either auto-close the wizard, show a success
+    // toast, or leave the wizard open. Try to dismiss any final confirmation.
+    const okBtn = page.locator('#modal button:has-text("Ok"), #modal button:has-text("Got it"), #modal button:has-text("Done"), #modal button:has-text("Finish")').first();
+    if (await okBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await okBtn.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(2000);
+      console.log('Dismissed final confirmation.');
+    }
     await dismissModals(page);
 
     // Check import status on the Imports page
