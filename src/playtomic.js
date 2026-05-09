@@ -148,55 +148,29 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.screenshot({ path: '/tmp/playtomic-step2-before-next.png', fullPage: true });
     console.log('[Screenshot] step2-before-next');
 
-    // Submitting Step 2 has been brittle — Playtomic's React handler doesn't
-    // always fire from Playwright clicks. Try multiple strategies until the
-    // wizard's "Drag and drop" zone disappears (i.e. the wizard moved on).
-    const stepStillOpen = async () =>
-      await page.getByText(/Drag and drop your file here/i).isVisible({ timeout: 1000 }).catch(() => false);
+    // Click Next exactly once, then wait for the API to confirm the import
+    // landed. Playtomic's wizard does NOT auto-close on success — we need to
+    // trust the API response, not the UI.
+    const importResponsePromise = page.waitForResponse(
+      resp => resp.url().includes('/api/v1/user_imports') &&
+              resp.request().method() === 'POST',
+      { timeout: 30000 },
+    );
+    const nextBtn = page.locator('#modal button:has-text("Next")').last();
+    await nextBtn.click({ force: true });
+    console.log('Step 2: clicked Next.');
 
-    const strategies = [
-      async () => {
-        const btn = page.locator('#modal button:has-text("Next")').last();
-        await btn.scrollIntoViewIfNeeded().catch(() => {});
-        await btn.click({ force: true });
-      },
-      async () => {
-        const btn = page.locator('#modal button:has-text("Next")').last();
-        await btn.focus();
-        await page.keyboard.press('Enter');
-      },
-      async () => {
-        await page.evaluate(() => {
-          const btn = Array.from(document.querySelectorAll('#modal button'))
-            .find(b => b.textContent.trim() === 'Next');
-          if (btn) btn.click();
-        });
-      },
-    ];
+    const importResp = await importResponsePromise;
+    const respBody = await importResp.text().catch(() => '');
+    if (importResp.status() >= 400) {
+      throw new Error(`Import POST failed (${importResp.status()}): ${respBody.slice(0, 500)}`);
+    }
+    console.log(`Step 2: import accepted (${importResp.status()}). Body: ${respBody.slice(0, 200)}`);
 
-    let submitted = false;
-    for (let i = 0; i < strategies.length; i++) {
-      await strategies[i]();
-      console.log(`Step 2: submit attempt ${i + 1}.`);
-      await page.waitForTimeout(4000);
-      if (!(await stepStillOpen())) {
-        submitted = true;
-        break;
-      }
-    }
-    if (!submitted) {
-      throw new Error('Step 2: wizard did not advance after Next click attempts');
-    }
-    await page.waitForTimeout(4000);
     await page.screenshot({ path: '/tmp/playtomic-step2-after-next.png', fullPage: true });
     console.log('[Screenshot] step2-after-next');
 
-    const okBtn = page.locator('#modal button:has-text("Ok"), #modal button:has-text("Got it"), #modal button:has-text("Done"), #modal button:has-text("Finish")').first();
-    if (await okBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await okBtn.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(2000);
-      console.log('Dismissed final confirmation.');
-    }
+    // Close the wizard now that the import is confirmed.
     await dismissModals(page);
 
     // Check import status on the Imports page
