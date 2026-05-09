@@ -82,14 +82,15 @@ async function uploadCSVToPlaytomic(csvContent, email, password) {
     await page.getByText(/I confirm that I have the necessary permissions/i).waitFor({ timeout: 15000 });
     await page.locator('input[type="checkbox"]').first().check();
     await page.waitForTimeout(500);
-    await page.locator('button:has-text("Next")').click();
+    // Use .last() — the wizard step header ("2 Import file") is also a button; the real "Next" is the footer button.
+    await page.locator('#modal button:has-text("Next")').last().click();
     await page.waitForTimeout(3000);
     console.log('Step 1: Confirmed permissions.');
 
     // === STEP 2: Upload CSV ===
     await page.locator('input[type="file"]').setInputFiles(tmpPath);
     await page.waitForTimeout(3000);
-    await page.locator('button:has-text("Next"), button:has-text("Import"), button:has-text("Submit")').first().click();
+    await page.locator('#modal button:has-text("Next")').last().click();
     await page.waitForTimeout(5000);
     console.log('Step 2: CSV uploaded and submitted.');
 
