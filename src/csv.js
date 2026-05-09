@@ -30,26 +30,28 @@ function formatPhone(phone) {
  * Includes category_name to auto-assign membership benefits.
  */
 function buildPlaytomicCSV(members) {
+  // Headers must match Playtomic's expected labels exactly (post-2026-05-07
+  // wizard redesign). Lowercase/snake_case variants get silently rejected.
   const rows = members.map(m => ({
-    name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
-    email: m.email || '',
-    phone_number: formatPhone(m.phone),
-    gender: (m.gender || '').toUpperCase() || '',
-    birthdate: formatDate(m.date_of_birth),
-    category_name: m.membership_name || '',
-    category_expires: formatDate(m.membership_expires),
+    'Name': `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+    'Email': m.email || '',
+    'Phone number': formatPhone(m.phone),
+    'Gender': (m.gender || '').toUpperCase() || '',
+    'Birth date': formatDate(m.date_of_birth),
+    'Category name': m.membership_name || '',
+    'Category expires': formatDate(m.membership_expires),
   }));
 
   return stringify(rows, {
     header: true,
     columns: [
-      'name',
-      'email',
-      'phone_number',
-      'gender',
-      'birthdate',
-      'category_name',
-      'category_expires',
+      'Name',
+      'Email',
+      'Phone number',
+      'Gender',
+      'Birth date',
+      'Category name',
+      'Category expires',
     ],
   });
 }
