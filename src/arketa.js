@@ -77,8 +77,8 @@ class ArketaClient {
         else if (arketaName.includes('core')) playtomicBenefit = 'Core Membership';
         else if (arketaName.includes('rise')) playtomicBenefit = 'Rise Membership';
 
-        // All memberships start on opening day (July 1) and last 12 months
-        const expiresDate = '2027-07-01T00:00:00.000Z';
+        // All memberships start on opening day (August 15) and last 12 months
+        const expiresDate = '2027-08-15T00:00:00.000Z';
 
         return {
         first_name: s.client_name?.split(' ')[0] || '',
